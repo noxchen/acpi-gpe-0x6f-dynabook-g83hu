@@ -1,0 +1,26 @@
+            CPU0       CPU1       CPU2       CPU3       CPU4       CPU5       CPU6       CPU7       
+   1:          0         71          0          0          0          0          0          0  IR-IO-APIC                  1-edge      i8042
+   8:          0          0          2          0          0          0          0          0  IR-IO-APIC                  8-edge      rtc0
+   9:      39686          0          0          0          0          0          0          0  IR-IO-APIC                  9-fasteoi   acpi
+ 128:          0          0          0          0          0          0          0          0  IR-PCI-MSI-0000:00:0d.0     0-edge      xhci_hcd
+ 136:          0      20231          0          0          0          0          0          0  IR-PCI-MSI-0000:00:14.0     0-edge      xhci_hcd
+ 162:          0          0          0          0          0         35          0          0  IR-PCI-MSIX-0000:58:00.0    0-edge      nvme0q0
+ 163:          0       4442          0          0          0          0          0          0  IR-PCI-MSIX-0000:58:00.0    1-edge      nvme0q1
+ 164:          0          0          0          0          0       6460          0          0  IR-PCI-MSIX-0000:58:00.0    2-edge      nvme0q2
+ 165:          0          0          0       5859          0          0          0          0  IR-PCI-MSIX-0000:58:00.0    3-edge      nvme0q3
+ 166:          0          0          0          0          0          0          0       5110  IR-PCI-MSIX-0000:58:00.0    4-edge      nvme0q4
+ 167:          0          0       4020          0          0          0          0          0  IR-PCI-MSIX-0000:58:00.0    5-edge      nvme0q5
+ 168:          0          0          0          0          0          0       3356          0  IR-PCI-MSIX-0000:58:00.0    6-edge      nvme0q6
+ 169:       4544          0          0          0          0          0          0          0  IR-PCI-MSIX-0000:58:00.0    7-edge      nvme0q7
+ 170:     296439          0          0          0          0          0          0          0  IR-PCI-MSI-0000:00:02.0     0-edge      i915
+ 171:          0          0          0          0       4118          0          0          0  IR-PCI-MSIX-0000:58:00.0    8-edge      nvme0q8
+ 173:          0          0          0          0          0          0     108129          0  IR-PCI-MSIX-0000:00:14.3    0-edge      iwlwifi:default_queue
+ 174:       8085          0          0          0          0          0          0          0  IR-PCI-MSIX-0000:00:14.3    1-edge      iwlwifi:queue_1
+ 175:          0       9627          0          0          0          0          0          0  IR-PCI-MSIX-0000:00:14.3    2-edge      iwlwifi:queue_2
+ 176:          0          0      13079          0          0          0          0          0  IR-PCI-MSIX-0000:00:14.3    3-edge      iwlwifi:queue_3
+ 177:          0          0          0      10472          0          0          0          0  IR-PCI-MSIX-0000:00:14.3    4-edge      iwlwifi:queue_4
+ 178:          0          0          0          0       7155          0          0          0  IR-PCI-MSIX-0000:00:14.3    5-edge      iwlwifi:queue_5
+ 179:          0          0          0          0          0       5499          0          0  IR-PCI-MSIX-0000:00:14.3    6-edge      iwlwifi:queue_6
+ 180:          0          0          0          0          0          0      15210          0  IR-PCI-MSIX-0000:00:14.3    7-edge      iwlwifi:queue_7
+ 181:          0          0          0          0          0          0          0       6550  IR-PCI-MSIX-0000:00:14.3    8-edge      iwlwifi:queue_8
+ 182:          0          0          0          0          0          0          0          5  IR-PCI-MSIX-0000:00:14.3    9-edge      iwlwifi:exception

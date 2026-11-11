@@ -1,0 +1,217 @@
+=========================================================================
+ 可直接粘贴的上游报告（纯文本版，供 bugzilla.kernel.org / linux-acpi 用）
+ 机器: dynabook G83/HU  |  内核 7.2.15  |  已验证修复
+=========================================================================
+
+提交位置
+--------
+A) bugzilla.kernel.org
+   Product : ACPI
+   Component: Other（若列表里有 Config-Other 之外的 ACPI 子项，选最贴近的）
+   Version  : 7.2.15-1-omarchy（或 "unspecified"）
+   Summary  : ACPI: GPE 0x6F storms at ~340/s on dynabook G83/HU, pins a CPU
+              core and breaks s2idle
+   附件     : acpi-gpe-6f-DSDT.aml（本机 DSDT）
+              有条件的话再附 `acpidump -b` 的全表压缩包
+
+B) 邮件列表 linux-acpi@vger.kernel.org
+   Subject  : [BUG] ACPI: GPE 0x6F storm on dynabook G83/HU breaks s2idle
+   From     : 用你自己的邮箱（非订阅者也能发，但可能被审核）
+   正文     : 见下方 SUMMARY 之后全部内容
+   DSDT     : 以附件形式带上，不要超过 1 MB（464 KB 没问题）
+
+注意：bugzilla 现在挂了 Anubis（JS 工作量证明）反爬，脚本发不进去，
+必须在真实浏览器里人工提交；账号还需要邮箱验证。
+
+
+-------------------------------------------------------------------------
+以下为报告正文（纯文本，可直接粘贴）
+-------------------------------------------------------------------------
+
+SUMMARY
+-------
+
+On this machine ACPI GPE 0x6F fires continuously at ~340 interrupts/second
+from the first second after boot.  Every event evaluates the AML method
+\_GPE._L6F, which forwards to \_GPE.AL6F and from there evaluates the OEM
+helpers \_SB.ISME, \_SB.GNMB, \_SB.GGRP, \_SB.GADR and \_SB.GINF (they sit
+next to the ACPI000E device \_SB.AWAC).
+
+A single invocation costs ~2.8 ms inside the ACPICA interpreter, so one CPU
+core is permanently pinned in kernel space (cpu0: 97-98% system time, the
+other 7 cores idle), package power is ~14.8 W instead of ~3 W, package
+temperature 60 C instead of 40 C, and the user hears the fan never spinning
+down.
+
+The same storm also breaks s2idle: every idle suspend aborts after ~2.2 s
+(/sys/power/pm_wakeup_irq = 9, the shared ACPI IRQ), the firmware re-arms the
+GPE on every resume, and the machine ends up in a 30-second suspend/resume
+loop.
+
+Masking the GPE with the kernel parameter acpi_mask_gpe=0x6F fixes both.
+
+HARDWARE
+--------
+
+  Vendor/Model : Dynabook Inc. dynabook G83/HU  (model A6GHHUBAD515)
+  Board        : A010D/0001
+  BIOS         : Version 7.80, 05/09/2022, vendor "Dynabook Inc." (AMI)
+  CPU          : 11th Gen Intel Core i5-1145G7 (Tiger Lake-UP3, 4C/8T)
+  Kernel       : 7.2.15-1-omarchy (Arch/Omarchy), ACPICA 20260408, 8 CPUs
+  Sleep        : /sys/power/mem_sleep = [s2idle] deep
+  Distro       : Omarchy (Arch Linux)
+
+EVIDENCE
+--------
+
+1) The GPE counter, ~13.5 h uptime:
+
+     $ cat /sys/firmware/acpi/interrupts/gpe6F
+     15530228     STS enabled      unmasked
+     $ cat /sys/firmware/acpi/interrupts/gpe_all
+     16586362
+     $ cat /sys/firmware/acpi/interrupts/gpe6E
+      1061573  EN     enabled      unmasked     <- neighbouring/EC GPE, ~21/s: normal
+
+   Sampled over 10 s: gpe6F +3437 (+344/s), gpe_all +3644 (+364/s).
+
+     $ grep '^\s*9:' /proc/interrupts
+        9:   17416911   0 0 0 0 0 0 0  IR-IO-APIC  9-fasteoi   acpi
+
+2) The CPU time is ACPICA interpreting AML, not a driver.  ftrace function
+   tracer on the busy kworkers, 2 s window, top entries:
+
+      4416 acpi_ut_track_stack_ptr
+      4348 _raw_spin_lock
+      4342 acpi_os_acquire_lock
+      4330 acpi_ut_update_ref_count.part.0
+      2852 acpi_ut_status_exit
+      2487 acpi_ut_trace_ptr
+      1574 acpi_ps_get_opcode_info
+       962 kmem_cache_alloc_noprof
+       805 acpi_ut_exit
+       666 acpi_ut_create_generic_state
+
+   Callers are acpi_ps_parse_loop() / acpi_ps_create_op() /
+   acpi_ex_resolve_operands().  No device driver ->notify() handler is ever
+   reached, i.e. nothing in Linux consumes these events.
+
+3) Which AML methods run, using ACPICA method tracing:
+
+     $ echo 0x10 > /sys/module/acpi/parameters/trace_debug_level
+     $ echo 0x80 > /sys/module/acpi/parameters/trace_debug_layer
+     $ echo enable > /sys/module/acpi/parameters/trace_state
+     $ dmesg | grep -oE 'Method (Begin|End) \[[^]]+\]' \
+         | awk '{print $3}' | sort | uniq -c | sort -rn
+
+        476 [\_SB.GINF]
+        237 [\_SB.GADR]
+        118 [\_SB.ISME]
+        118 [\_SB.GNMB]
+        118 [\_SB.GGRP]
+         30 [\_GPE._L6F]
+         30 [\_GPE.AL6F]
+
+   (0.4 s window; tracing slows the storm to ~75/s.)
+
+   So: GPE 0x6F -> \_GPE._L6F -> \_GPE.AL6F -> \_SB.ISME / GNMB / GGRP
+                                            -> \_SB.GADR -> \_SB.GINF
+
+   The GNMB/GGRP helpers look like NVM/group reads over an OperationRegion,
+   which is why one event takes milliseconds.
+
+4) Power/temperature delta, measured with /sys/class/powercap/intel-rapl:0:
+
+     storm running : package 14.0 W, Package id 0 +60 C, cpu0 sys 98%
+     GPE disabled  : package  5.4 W, Package id 0 +42 C, cpu0 sys  6%  (25 s)
+     GPE re-enabled: package 14.9 W, Package id 0 +57 C, cpu0 sys 97%  (15 s)
+
+   constraint_0_power_limit_uw = 28 W, so the storm burns ~1/3 of the
+   package power budget while the machine is completely idle.
+
+5) s2idle is unusable: every suspend exits again after ~2.2 s, 65 cycles in
+   a 30 minute window:
+
+     [41801.247917] PM: suspend exit
+     [41829.215378] PM: suspend entry (s2idle)
+     [41831.478825] PM: suspend exit
+     [41859.464678] PM: suspend entry (s2idle)
+     [41861.760777] PM: suspend exit
+     ...
+     $ cat /sys/power/pm_wakeup_irq
+     9
+
+6) Unrelated firmware bug in the same DSDT (EC query handler):
+
+     [48046.513805] ACPI BIOS Error (bug): Could not resolve symbol
+       [\_SB.PC00.LPCB.EC._Q01.CHRG], AE_NOT_FOUND (20260408/psargs-365)
+     [48046.513817] ACPI Error: Aborting method
+       \_SB.PC00.LPCB.EC._Q01 due to previous error (AE_NOT_FOUND)
+
+STEPS TO REPRODUCE
+------------------
+
+1. Boot the machine, no workload and nothing plugged in.
+2. watch -n1 'cat /sys/firmware/acpi/interrupts/gpe6F'   -> +340/s
+3. top -> kworker/0:1+kacpid, kworker/0:3-kacpid, irq/9-acpi on CPU 0
+   mpstat -P 0 -> ~98% %sys
+4. Leave the machine idle; it suspends and wakes again after ~2 s, forever.
+
+FIX THAT WORKS HERE
+-------------------
+
+  acpi_mask_gpe=0x6F on the kernel command line.
+
+  After a reboot, with no user-space help at all:
+
+     $ cat /proc/cmdline | tr ' ' '\n' | grep acpi_mask_gpe
+     acpi_mask_gpe=0x6F
+     $ cat /sys/firmware/acpi/interrupts/gpe6F
+            0     STS disabled     masked      <- count 0 since boot
+     $ grep '^\s*9:' /proc/interrupts            # 5 s delta -> 21/s
+        9:       5033          0  ...  IR-IO-APIC  9-fasteoi   acpi
+
+     cpu0          : sys 0-1 %, idle 94-97 %     (was sys 97-98 %)
+     package power : 2.9-3.4 W                   (was 14.0-14.9 W)
+     package temp  : 39-44 C                     (was 59-61 C)
+
+  And s2idle is fixed by the same change:
+
+     [  185.778749] PM: suspend entry (s2idle)
+     [  207.251253] PM: suspend exit            21.5 s (RTC alarm)
+     [  235.433080] PM: suspend entry (s2idle)
+     [ 1108.609446] PM: suspend exit            873 s uninterrupted
+     [ 1136.684731] PM: suspend entry (s2idle)
+     [ 4239.343422] PM: suspend exit            3102 s uninterrupted
+
+  i.e. the storming GPE was what woke the system out of S0ix: it keeps
+  firing while suspended and the shared ACPI IRQ aborts the s2idle entry.
+
+  Note: after a resume the state field reads "enabled masked" again (the
+  kernel re-sets the runtime enable bit) but the hard mask holds, the
+  counter stays at 0 and no AML is executed.
+
+  Runtime-only workaround (does NOT survive suspend/resume):
+     echo disable > /sys/firmware/acpi/interrupts/gpe6F
+
+SUGGESTED FIX
+-------------
+
+  1. A DMI quirk that masks GPE 0x6F for the dynabook G83/HU (a per-machine
+     acpi_mask_gpe default).  One change fixes both the CPU/power burn and
+     the broken s2idle.
+  2. Or find out why the GPE status bit stays asserted: the firmware never
+     clears the underlying source, and the _L6F/AL6F handler only reads
+     state (GNMB/GGRP/GADR/GINF) without acknowledging anything.
+  3. The generic GPE storm detection (gpe_storm_threshold) does not trigger
+     here.
+
+ATTACHMENTS
+-----------
+
+  * DSDT of the affected machine (464514 bytes)
+  * acpidump -b output, dmesg, lspci -vv (if requested)
+
+=========================================================================
+ 报告结束
+=========================================================================
